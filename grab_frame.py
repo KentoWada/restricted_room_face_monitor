@@ -1,5 +1,5 @@
 import cv2
-
+import time
 
 def open_camera(source=0):
     cap = cv2.VideoCapture(source)
@@ -8,15 +8,26 @@ def open_camera(source=0):
     return cap
 
 
-def frames(source=0):
+def frames(source=0, reconnect=True, rety_delay=2.0):
     """Yield frames one by one until the source ends."""
     cap = open_camera(source)
     try:
         while True:
             ok, frame = cap.read()
-            if not ok:
+            if ok:
+                yield frame
+                continue
+            cap.release()
+
+            if not reconnect:
                 break
-            yield frame
+
+            while True:
+                time.sleep(retry_delay)
+                cap.cv2.VideoCapture(source)
+
+                if cap.isOpened():
+                    break
     finally:
         cap.release()
 

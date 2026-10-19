@@ -1,5 +1,4 @@
 import time
-
 import cv2
 
 from detect_one import detect_faces, load_model
