@@ -19,6 +19,7 @@ COUNTER = 0
 
 cam = cv2.VideoCapture(0)
 
+# Loop for taking images.
 while COUNTER < NUM_OF_IMAGES:
     ok, frame = cam.read()
     if not ok:
