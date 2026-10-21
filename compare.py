@@ -1,8 +1,10 @@
-from detect_one import load_model, detect_faces
+from detector import load_model, detect_faces
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+THRESHOLD = 0.47
 
 IMG_DIR = Path("images")
 app = load_model()
@@ -19,9 +21,14 @@ def embedding_of(path):
     return faces[0].normed_embedding
 
 
-a = embedding_of(IMG_DIR / ".jpg")
-b = embedding_of(IMG_DIR/ ".jpg")
-c = embedding_of(IMG_DIR / ".jpg")
+a = embedding_of(IMG_DIR / "me0.jpg")
+b = embedding_of(IMG_DIR/ "me1.jpg")
+c = embedding_of(IMG_DIR / "me2.jpg")
+d = embedding_of(IMG_DIR / "dta.jpg")
 
-print("same person:", np.dot(a, c))
-print("different person:", np.dot(a, c))
+ENROLLED = {}
+ENROLLED['Director'] = [a, b, c]
+
+for name, embedding in ENROLLED.items():
+    for e in embedding:
+        print(name, np.dot(e, d))

@@ -1,5 +1,5 @@
 from pathlib import Path
-from detect_one import load_model, detect_faces
+from detector import load_model, detect_faces
 
 import cv2
 

@@ -1,7 +1,7 @@
 import time
 import cv2
 
-from detect_one import detect_faces, load_model
+from detector import detect_faces, load_model
 from grab_frame import frames
 
 SOURCE = 0  # later: an RTSP URL
