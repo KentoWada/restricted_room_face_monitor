@@ -1,6 +1,6 @@
 import numpy as np
 
-THRESHOLD = 0.45
+THRESHOLD = 0.47
 
 
 def best_match(embedding, enrolled):
