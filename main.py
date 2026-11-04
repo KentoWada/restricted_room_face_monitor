@@ -1,4 +1,5 @@
-import time
+ import time
+from pathlib import Path 
 
 import cv2
 
@@ -7,8 +8,12 @@ from enroller import build_enrolled
 from grab_frame import frames
 from recognizer import best_match
 
-SOURCE = 0  # later: an RTSP URL
-PROCESS_EVERY = 3  # run the detector on every 3rd frame
+SOURCE = 0  
+PROCESS_EVERY = 3  
+CHECK_EVERY = 3  
+def folder_state():  
+    files = [p for p in Path("images").glob("*/*") if p.is_file()]
+    return len(files), sum(p.stat().st_size for p in files)
 
 
 def draw(frame, faces, labels, fps):
@@ -30,7 +35,14 @@ def main():
     faces = []
     labels = []
     prev = time.time()
+    state = folder_state()  
+    last_check = time.time()  
     for i, frame in enumerate(frames(SOURCE)):
+        if time.time() - last_check > CHECK_EVERY:  
+            last_check = time.time()  
+            if folder_state() != state:  
+                state = folder_state()  
+                enrolled = build_enrolled(app)  
         if i % PROCESS_EVERY == 0:
             faces = detect_faces(app, frame)
             labels = [best_match(f.normed_embedding, enrolled) for f in faces]
