@@ -1,18 +1,25 @@
- import time
-from pathlib import Path 
+import argparse
+from contextlib import closing
+from pathlib import Path
+import time
 
 import cv2
 
-from detector import detect_faces, load_model
-from enroller import build_enrolled
+from alerts import UnknownFaceAlert
+from event_logger import EventLogger
 from grab_frame import frames
 from recognizer import best_match
 
-SOURCE = 0  
-PROCESS_EVERY = 3  
-CHECK_EVERY = 3  
-def folder_state():  
-    files = [p for p in Path("images").glob("*/*") if p.is_file()]
+SOURCE = 0  # later: an RTSP URL
+CAMERA_NAME = "Camera 1"
+LOG_COOLDOWN_SECONDS = 10
+ALERT_COOLDOWN_SECONDS = 10
+PROCESS_EVERY = 3  # run the detector on every 3rd frame
+CHECK_EVERY = 3  # seconds between checks for enrolled photo changes
+
+
+def folder_state(image_dir):
+    files = [p for p in Path(image_dir).glob("*/*") if p.is_file()]
     return len(files), sum(p.stat().st_size for p in files)
 
 
@@ -28,32 +35,78 @@ def draw(frame, faces, labels, fps):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Live face recognition and CSV event logging")
+    parser.add_argument("--camera", type=int, default=SOURCE, help="Webcam index (default: 0)")
+    parser.add_argument("--camera-name", default=CAMERA_NAME)
+    parser.add_argument("--mute", action="store_true", help="Disable unknown-face audio alerts")
+    args = parser.parse_args()
+    image_dir = Path(__file__).with_name("images")
+    if not image_dir.is_dir() or not any(image_dir.iterdir()):
+        raise SystemExit("No enrolled photos. Run python pic_taker.py first, then restart.")
+
+    from detector import detect_faces, load_model
+    from enroller import build_enrolled
+
+    event_logger = EventLogger(cooldown_seconds=LOG_COOLDOWN_SECONDS)
+    audio_alert = UnknownFaceAlert(cooldown_seconds=ALERT_COOLDOWN_SECONDS,
+                                   enabled=not args.mute)
+    print("Loading face model and enrolled photos. Please wait...")
     app = load_model()
-    enrolled = build_enrolled(app)
+    enrolled = build_enrolled(app, image_dir=image_dir)
     if not enrolled:
-        raise SystemExit("no enrolled people found in images/")
+        raise SystemExit("No usable enrolled faces. Capture clear photos with one face each using pic_taker.py.")
+    print("Enrolled people: " + ", ".join(sorted(enrolled)))
+    print(f"Camera: {args.camera_name} | Event log: {event_logger.csv_path}")
+    print("Focus the camera window and press Q to quit.")
+    print("Unknown-face audio alerts: " + ("muted" if args.mute else "enabled"))
     faces = []
     labels = []
     prev = time.time()
-    state = folder_state()  
-    last_check = time.time()  
-    for i, frame in enumerate(frames(SOURCE)):
-        if time.time() - last_check > CHECK_EVERY:  
-            last_check = time.time()  
-            if folder_state() != state:  
-                state = folder_state()  
-                enrolled = build_enrolled(app)  
-        if i % PROCESS_EVERY == 0:
-            faces = detect_faces(app, frame)
-            labels = [best_match(f.normed_embedding, enrolled) for f in faces]
-        now = time.time()
-        fps = 1.0 / max(now - prev, 1e-6)
-        prev = now
-        draw(frame, faces, labels, fps)
-        cv2.imshow("Prototype", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-    cv2.destroyAllWindows()
+    saved_events = 0
+    state = folder_state(image_dir)
+    last_check = time.time()
+    try:
+        with closing(frames(args.camera, reconnect=False)) as stream:
+            for i, frame in enumerate(stream):
+                if time.time() - last_check > CHECK_EVERY:
+                    last_check = time.time()
+                    new_state = folder_state(image_dir)
+                    if new_state != state:
+                        state = new_state
+                        reloaded = build_enrolled(app, image_dir=image_dir)
+                        if reloaded:
+                            enrolled = reloaded
+                            print("Enrolled people updated: " + ", ".join(sorted(enrolled)))
+                        else:
+                            print("Enrolled photos changed but none were usable. Keeping the previous set.")
+                if i % PROCESS_EVERY == 0:
+                    faces = detect_faces(app, frame)
+                    labels = [best_match(f.normed_embedding, enrolled) for f in faces]
+                    for name, score in labels:
+                        audio_alert.notify(name)
+                        if event_logger.log_event(name, score, args.camera_name):
+                            saved_events += 1
+                            status = "Unknown" if name == "Unknown" else "Authorized"
+                            print(f"Saved: {name} | {status} | similarity {score:.2f}")
+                now = time.time()
+                fps = 1.0 / max(now - prev, 1e-6)
+                prev = now
+                draw(frame, faces, labels, fps)
+                cv2.putText(frame, f"{args.camera_name} | Events saved: {saved_events} | Q: Quit",
+                            (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+                cv2.imshow("Prototype", frame)
+                if cv2.waitKey(1) & 0xFF in (ord("q"), ord("Q")):
+                    break
+                if cv2.getWindowProperty("Prototype", cv2.WND_PROP_VISIBLE) < 1:
+                    break
+            else:
+                print("Camera stopped providing frames. Check the connection and restart.")
+    except RuntimeError as error:
+        raise SystemExit(f"{error}. Close other camera apps or try python main.py --camera 1.") from error
+    except KeyboardInterrupt:
+        print("Monitoring stopped.")
+    finally:
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
