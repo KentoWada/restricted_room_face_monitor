@@ -15,6 +15,12 @@ CAMERA_NAME = "Camera 1"
 LOG_COOLDOWN_SECONDS = 10
 ALERT_COOLDOWN_SECONDS = 10
 PROCESS_EVERY = 3  # run the detector on every 3rd frame
+CHECK_EVERY = 3  # seconds between checks for enrolled photo changes
+
+
+def folder_state(image_dir):
+    files = [p for p in Path(image_dir).glob("*/*") if p.is_file()]
+    return len(files), sum(p.stat().st_size for p in files)
 
 
 def draw(frame, faces, labels, fps):
@@ -57,9 +63,22 @@ def main():
     labels = []
     prev = time.time()
     saved_events = 0
+    state = folder_state(image_dir)
+    last_check = time.time()
     try:
         with closing(frames(args.camera, reconnect=False)) as stream:
             for i, frame in enumerate(stream):
+                if time.time() - last_check > CHECK_EVERY:
+                    last_check = time.time()
+                    new_state = folder_state(image_dir)
+                    if new_state != state:
+                        state = new_state
+                        reloaded = build_enrolled(app, image_dir=image_dir)
+                        if reloaded:
+                            enrolled = reloaded
+                            print("Enrolled people updated: " + ", ".join(sorted(enrolled)))
+                        else:
+                            print("Enrolled photos changed but none were usable. Keeping the previous set.")
                 if i % PROCESS_EVERY == 0:
                     faces = detect_faces(app, frame)
                     labels = [best_match(f.normed_embedding, enrolled) for f in faces]
