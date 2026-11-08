@@ -1,14 +1,15 @@
 import cv2
 import time
 
+
 def open_camera(source=0):
-    cap = cv2.VideoCapture(source, cv2.CAP_DSHOW) if isinstance(source, int) else cv2.VideoCapture(source)  
+    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video source: {source}")
     return cap
 
 
-def frames(source=0, reconnect=True, retry_delay=2.0):  
+def frames(source=0, reconnect=True, retry_delay=2.0):
     """Yield frames one by one until the source ends."""
     cap = open_camera(source)
     try:
@@ -24,7 +25,7 @@ def frames(source=0, reconnect=True, retry_delay=2.0):
 
             while True:
                 time.sleep(retry_delay)
-                cap = cv2.VideoCapture(source)  
+                cap = cv2.VideoCapture(source)
 
                 if cap.isOpened():
                     break
